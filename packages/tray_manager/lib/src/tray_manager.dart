@@ -10,6 +10,7 @@ import 'package:path/path.dart' as path;
 import 'package:shortid/shortid.dart';
 import 'package:tray_manager/src/helpers/sandbox.dart';
 import 'package:tray_manager/src/tray_listener.dart';
+import 'package:tray_manager/src/tray_manager_linux.dart';
 
 const kEventOnTrayIconMouseDown = 'onTrayIconMouseDown';
 const kEventOnTrayIconMouseUp = 'onTrayIconMouseUp';
@@ -22,6 +23,9 @@ enum TrayIconPosition { left, right }
 class TrayManager {
   TrayManager._() {
     _channel.setMethodCallHandler(_methodCallHandler);
+    if (!kIsWeb && defaultTargetPlatform == TargetPlatform.linux) {
+      _setupLinuxCallbacks();
+    }
   }
 
   /// The shared instance of [TrayManager].
@@ -37,6 +41,55 @@ class TrayManager {
   }
 
   Menu? _menu;
+
+  void _setupLinuxCallbacks() {
+    TrayManagerLinux.instance.onTrayIconMouseDown = () {
+      for (final listener in _listeners) {
+        listener.onTrayIconMouseDown();
+      }
+    };
+    TrayManagerLinux.instance.onTrayIconMouseUp = () {
+      for (final listener in _listeners) {
+        listener.onTrayIconMouseUp();
+      }
+    };
+    TrayManagerLinux.instance.onTrayIconRightMouseDown = () {
+      for (final listener in _listeners) {
+        listener.onTrayIconRightMouseDown();
+      }
+    };
+    TrayManagerLinux.instance.onTrayIconRightMouseUp = () {
+      for (final listener in _listeners) {
+        listener.onTrayIconRightMouseUp();
+      }
+    };
+    TrayManagerLinux.instance.onTrayMenuItemClick = (int id) {
+      _handleMenuItemClick(id);
+    };
+    TrayManagerLinux.instance.onTrayIconScroll = (int delta, String orientation) {
+      for (final listener in _listeners) {
+        listener.onTrayIconScroll(delta, orientation);
+      }
+    };
+  }
+
+  Future<void> _handleMenuItemClick(int id) async {
+    MenuItem? menuItem = _menu?.getMenuItemById(id);
+    if (menuItem != null) {
+      bool? oldChecked = menuItem.checked;
+      if (menuItem.onClick != null) {
+        menuItem.onClick?.call(menuItem);
+      }
+      for (final listener in _listeners) {
+        listener.onTrayMenuItemClick(menuItem);
+      }
+
+      bool? newChecked = menuItem.checked;
+      if (oldChecked != newChecked) {
+        await setContextMenu(_menu!);
+      }
+    }
+  }
 
   Future<void> _methodCallHandler(MethodCall call) async {
     for (final TrayListener listener in _listeners) {
@@ -55,19 +108,7 @@ class TrayManager {
           break;
         case kEventOnTrayMenuItemClick:
           int id = call.arguments['id'];
-          MenuItem? menuItem = _menu?.getMenuItemById(id);
-          if (menuItem != null) {
-            bool? oldChecked = menuItem.checked;
-            if (menuItem.onClick != null) {
-              menuItem.onClick?.call(menuItem);
-            }
-            listener.onTrayMenuItemClick(menuItem);
-
-            bool? newChecked = menuItem.checked;
-            if (oldChecked != newChecked) {
-              await setContextMenu(_menu!);
-            }
-          }
+          _handleMenuItemClick(id);
           break;
       }
     }
@@ -91,6 +132,10 @@ class TrayManager {
 
   // Destroys the tray icon immediately.
   Future<void> destroy() async {
+    if (!kIsWeb && defaultTargetPlatform == TargetPlatform.linux) {
+      await TrayManagerLinux.instance.destroy();
+      return;
+    }
     await _channel.invokeMethod('destroy');
   }
 
@@ -130,7 +175,8 @@ class TrayManager {
           // the same as seen by the app and the host system.
           arguments['iconPath'] = iconPath;
         }
-        break;
+        await TrayManagerLinux.instance.setIcon(arguments['iconPath']);
+        return;
       case TargetPlatform.macOS:
         // Add the icon as base64 string
         ByteData imageData = await rootBundle.load(iconPath);
@@ -148,6 +194,9 @@ class TrayManager {
   ///
   /// @platforms macos
   Future<void> setIconPosition(TrayIconPosition trayIconPosition) async {
+    if (!kIsWeb && defaultTargetPlatform == TargetPlatform.linux) {
+      return;
+    }
     final arguments = <String, dynamic>{
       'iconPosition': trayIconPosition.name,
     };
@@ -162,6 +211,10 @@ class TrayManager {
   /// await trayManager.setToolTip(...);
   /// ```
   Future<void> setToolTip(String toolTip) async {
+    if (!kIsWeb && defaultTargetPlatform == TargetPlatform.linux) {
+      await TrayManagerLinux.instance.setToolTip(toolTip);
+      return;
+    }
     final Map<String, dynamic> arguments = {
       'toolTip': toolTip,
     };
@@ -170,6 +223,10 @@ class TrayManager {
 
   /// Sets the title for this tray icon.
   Future<void> setTitle(String title) async {
+    if (!kIsWeb && defaultTargetPlatform == TargetPlatform.linux) {
+      await TrayManagerLinux.instance.setTitle(title);
+      return;
+    }
     final Map<String, dynamic> arguments = {
       'title': title,
     };
@@ -179,6 +236,10 @@ class TrayManager {
   /// Sets the context menu for this icon.
   Future<void> setContextMenu(Menu menu) async {
     _menu = menu;
+    if (!kIsWeb && defaultTargetPlatform == TargetPlatform.linux) {
+      await TrayManagerLinux.instance.setContextMenu(menu);
+      return;
+    }
     final Map<String, dynamic> arguments = {
       'menu': menu.toJson(),
     };
@@ -195,6 +256,9 @@ class TrayManager {
     )
     bool bringAppToFront = false,
   }) async {
+    if (!kIsWeb && defaultTargetPlatform == TargetPlatform.linux) {
+      return;
+    }
     final Map<String, dynamic> arguments = {
       'bringAppToFront': bringAppToFront,
     };
@@ -203,6 +267,9 @@ class TrayManager {
 
   /// The bounds of this tray icon.
   Future<Rect?> getBounds() async {
+    if (!kIsWeb && defaultTargetPlatform == TargetPlatform.linux) {
+      return null;
+    }
     final Map<String, dynamic> arguments = {
       'devicePixelRatio': _devicePixelRatio,
     };

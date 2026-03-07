@@ -18,6 +18,7 @@ environment:
   flutter: ">=3.3.0"
 
 dependencies:
+  dart_xdg_status_notifier_item: ^1.1.0
   flutter:
     sdk: flutter
   menu_base: ^0.1.0
@@ -33,7 +34,7 @@ flutter:
   plugin:
     platforms:
       linux:
-        pluginClass: TrayManagerPlugin
+        dartPluginClass: TrayManagerLinux
       macos:
         pluginClass: TrayManagerPlugin
       windows:
