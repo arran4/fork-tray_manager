@@ -14,6 +14,10 @@ class TrayManagerLinux {
   }
 
   StatusNotifierItemClient? _client;
+  DBusMenuItem? _currentMenu;
+  String _iconName = 'flutter';
+  String? _title;
+  String? _toolTip;
 
   // Callbacks to communicate events back to the main TrayManager class
   void Function()? onTrayIconMouseDown;
@@ -27,33 +31,44 @@ class TrayManagerLinux {
     if (_client != null) {
       await _client!.close();
       _client = null;
+      _currentMenu = null;
     }
   }
 
   Future<void> setIcon(String iconPath) async {
     await _ensureClient();
+    _iconName = iconPath;
     _client!.iconName = iconPath;
   }
 
   Future<void> setToolTip(String toolTip) async {
     await _ensureClient();
-    _client!.toolTip = StatusNotifierToolTip(
-      iconName: _client!.iconName,
-      iconPixmap: [],
-      title: toolTip,
-      body: '',
-    );
+    _toolTip = toolTip;
+    _client!.toolTip = _buildToolTip(toolTip);
   }
 
   Future<void> setTitle(String title) async {
     await _ensureClient();
+    _title = title;
     _client!.title = title;
   }
 
   Future<void> setContextMenu(Menu menu) async {
-    await _ensureClient();
     DBusMenuItem rootMenu = _buildDBusMenu(menu);
-    await _client!.updateMenu(rootMenu);
+    if (_client == null) {
+      await _ensureClient(initialMenu: rootMenu);
+      return;
+    }
+
+    if (_isMenuLayoutCompatible(_currentMenu, rootMenu)) {
+      await _client!.updateMenu(rootMenu);
+      _currentMenu = rootMenu;
+      return;
+    }
+
+    // TODO(arran4): Replace full client recreation once the DBus menu layer
+    // supports structural menu updates.
+    await _recreateClientWithMenu(rootMenu);
   }
 
   DBusMenuItem _buildDBusMenu(Menu menu) {
@@ -97,12 +112,12 @@ class TrayManagerLinux {
     );
   }
 
-  Future<void> _ensureClient() async {
+  Future<void> _ensureClient({DBusMenuItem? initialMenu}) async {
     if (_client == null) {
       String id = 'tray_manager_${shortid.generate()}';
       _client = StatusNotifierItemClient(
         id: id,
-        menu: DBusMenuItem(children: []),
+        menu: initialMenu ?? DBusMenuItem(children: []),
         onActivate: (x, y) async {
            onTrayIconMouseDown?.call();
            onTrayIconMouseUp?.call();
@@ -118,8 +133,53 @@ class TrayManagerLinux {
            // Provide the menu structure
         },
       );
-      _client!.iconName = 'flutter'; // Default fallback
+      _currentMenu = initialMenu ?? DBusMenuItem(children: []);
+      _client!.iconName = _iconName; // Default fallback
+      if (_title != null) {
+        _client!.title = _title!;
+      }
+      if (_toolTip != null) {
+        _client!.toolTip = _buildToolTip(_toolTip!);
+      }
       await _client!.connect();
     }
+  }
+
+  Future<void> _recreateClientWithMenu(DBusMenuItem menu) async {
+    if (_client != null) {
+      await _client!.close();
+      _client = null;
+      _currentMenu = null;
+    }
+    await _ensureClient(initialMenu: menu);
+  }
+
+  StatusNotifierToolTip _buildToolTip(String toolTip) {
+    return StatusNotifierToolTip(
+      iconName: _iconName,
+      iconPixmap: [],
+      title: toolTip,
+      body: '',
+    );
+  }
+
+  bool _isMenuLayoutCompatible(DBusMenuItem? previous, DBusMenuItem next) {
+    if (previous == null) {
+      return false;
+    }
+
+    List<DBusMenuItem> previousChildren = previous.children;
+    List<DBusMenuItem> nextChildren = next.children;
+    if (previousChildren.length != nextChildren.length) {
+      return false;
+    }
+
+    for (int i = 0; i < previousChildren.length; i++) {
+      if (!_isMenuLayoutCompatible(previousChildren[i], nextChildren[i])) {
+        return false;
+      }
+    }
+
+    return true;
   }
 }
