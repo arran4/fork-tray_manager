@@ -28,10 +28,12 @@ class TrayManagerLinux {
   void Function(int delta, String orientation)? onTrayIconScroll;
 
   Future<void> destroy() async {
-    if (_client != null) {
-      await _client!.close();
-      _client = null;
-      _currentMenu = null;
+    StatusNotifierItemClient? client = _client;
+    _client = null;
+    _currentMenu = null;
+
+    if (client != null) {
+      await client.close();
     }
   }
 
@@ -146,11 +148,14 @@ class TrayManagerLinux {
   }
 
   Future<void> _recreateClientWithMenu(DBusMenuItem menu) async {
-    if (_client != null) {
-      await _client!.close();
-      _client = null;
-      _currentMenu = null;
+    StatusNotifierItemClient? client = _client;
+    _client = null;
+    _currentMenu = null;
+
+    if (client != null) {
+      await client.close();
     }
+
     await _ensureClient(initialMenu: menu);
   }
 
