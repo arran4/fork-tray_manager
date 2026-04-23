@@ -10,8 +10,7 @@ class TrayManagerLinux {
   static final TrayManagerLinux instance = TrayManagerLinux._();
 
   static void registerWith() {
-    // No-op for registering the plugin since it's instantiated directly by TrayManager
-    // but this satisfies flutter's dartPluginClass expectation.
+    TrayManagerLinux.instance;
   }
 
   StatusNotifierItemClient? _client;
