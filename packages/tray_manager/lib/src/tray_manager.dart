@@ -10,6 +10,7 @@ import 'package:path/path.dart' as path;
 import 'package:shortid/shortid.dart';
 import 'package:tray_manager/src/helpers/sandbox.dart';
 import 'package:tray_manager/src/tray_listener.dart';
+import 'package:tray_manager/src/tray_manager_linux.dart';
 
 const kEventOnTrayIconMouseDown = 'onTrayIconMouseDown';
 const kEventOnTrayIconMouseUp = 'onTrayIconMouseUp';
@@ -22,12 +23,19 @@ enum TrayIconPosition { left, right }
 class TrayManager {
   TrayManager._() {
     _channel.setMethodCallHandler(_methodCallHandler);
+    if (!kIsWeb && Platform.isLinux) {
+      _linuxTrayManager = TrayManagerLinux();
+      _linuxTrayManager!.setEventHandler((method, arguments) {
+        _methodCallHandler(MethodCall(method, arguments));
+      });
+    }
   }
 
   /// The shared instance of [TrayManager].
   static final TrayManager instance = TrayManager._();
 
   final MethodChannel _channel = const MethodChannel('tray_manager');
+  TrayManagerLinux? _linuxTrayManager;
 
   final ObserverList<TrayListener> _listeners = ObserverList<TrayListener>();
 
@@ -91,6 +99,10 @@ class TrayManager {
 
   // Destroys the tray icon immediately.
   Future<void> destroy() async {
+    if (!kIsWeb && Platform.isLinux) {
+      await _linuxTrayManager?.destroy();
+      return;
+    }
     await _channel.invokeMethod('destroy');
   }
 
@@ -121,24 +133,31 @@ class TrayManager {
       'iconSize': iconSize,
     };
 
-    switch (defaultTargetPlatform) {
-      case TargetPlatform.linux:
-        if (runningInSandbox()) {
-          // Pass the icon name as specified if running in a sandbox.
-          //
-          // This is required because when running in a sandbox, paths are not
-          // the same as seen by the app and the host system.
-          arguments['iconPath'] = iconPath;
-        }
-        break;
-      case TargetPlatform.macOS:
-        // Add the icon as base64 string
-        ByteData imageData = await rootBundle.load(iconPath);
-        String base64Icon = base64Encode(imageData.buffer.asUint8List());
-        arguments['base64Icon'] = base64Icon;
-        break;
-      default:
-        break;
+    if (!kIsWeb) {
+      switch (defaultTargetPlatform) {
+        case TargetPlatform.linux:
+          if (runningInSandbox()) {
+            // Pass the icon name as specified if running in a sandbox.
+            //
+            // This is required because when running in a sandbox, paths are not
+            // the same as seen by the app and the host system.
+            arguments['iconPath'] = iconPath;
+          }
+          break;
+        case TargetPlatform.macOS:
+          // Add the icon as base64 string
+          ByteData imageData = await rootBundle.load(iconPath);
+          String base64Icon = base64Encode(imageData.buffer.asUint8List());
+          arguments['base64Icon'] = base64Icon;
+          break;
+        default:
+          break;
+      }
+    }
+
+    if (!kIsWeb && Platform.isLinux) {
+      await _linuxTrayManager?.setIcon(arguments['id'], arguments['iconPath']);
+      return;
     }
 
     await _channel.invokeMethod('setIcon', arguments);
@@ -148,6 +167,10 @@ class TrayManager {
   ///
   /// @platforms macos
   Future<void> setIconPosition(TrayIconPosition trayIconPosition) async {
+    if (!kIsWeb && Platform.isLinux) {
+      await _linuxTrayManager?.setIconPosition(trayIconPosition.name);
+      return;
+    }
     final arguments = <String, dynamic>{
       'iconPosition': trayIconPosition.name,
     };
@@ -162,6 +185,10 @@ class TrayManager {
   /// await trayManager.setToolTip(...);
   /// ```
   Future<void> setToolTip(String toolTip) async {
+    if (!kIsWeb && Platform.isLinux) {
+      await _linuxTrayManager?.setToolTip(toolTip);
+      return;
+    }
     final Map<String, dynamic> arguments = {
       'toolTip': toolTip,
     };
@@ -170,6 +197,10 @@ class TrayManager {
 
   /// Sets the title for this tray icon.
   Future<void> setTitle(String title) async {
+    if (!kIsWeb && Platform.isLinux) {
+      await _linuxTrayManager?.setTitle(title);
+      return;
+    }
     final Map<String, dynamic> arguments = {
       'title': title,
     };
@@ -179,6 +210,10 @@ class TrayManager {
   /// Sets the context menu for this icon.
   Future<void> setContextMenu(Menu menu) async {
     _menu = menu;
+    if (!kIsWeb && Platform.isLinux) {
+      await _linuxTrayManager?.setContextMenu(menu);
+      return;
+    }
     final Map<String, dynamic> arguments = {
       'menu': menu.toJson(),
     };
@@ -195,6 +230,10 @@ class TrayManager {
     )
     bool bringAppToFront = false,
   }) async {
+    if (!kIsWeb && Platform.isLinux) {
+      await _linuxTrayManager?.popUpContextMenu();
+      return;
+    }
     final Map<String, dynamic> arguments = {
       'bringAppToFront': bringAppToFront,
     };
@@ -203,6 +242,9 @@ class TrayManager {
 
   /// The bounds of this tray icon.
   Future<Rect?> getBounds() async {
+    if (!kIsWeb && Platform.isLinux) {
+      return await _linuxTrayManager?.getBounds();
+    }
     final Map<String, dynamic> arguments = {
       'devicePixelRatio': _devicePixelRatio,
     };

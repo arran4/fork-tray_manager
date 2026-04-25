@@ -18,6 +18,8 @@ environment:
   flutter: ">=3.3.0"
 
 dependencies:
+  dart_libayatana_appindicator: ^0.1.5
+  dbus: ^0.7.8
   flutter:
     sdk: flutter
   menu_base: ^0.1.0
@@ -33,7 +35,7 @@ flutter:
   plugin:
     platforms:
       linux:
-        pluginClass: TrayManagerPlugin
+        dartPluginClass: TrayManagerLinux
       macos:
         pluginClass: TrayManagerPlugin
       windows:
