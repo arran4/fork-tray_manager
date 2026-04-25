@@ -14,7 +14,7 @@ class TrayManagerLinux {
   }
 
   StatusNotifierItemClient? _client;
-  DBusMenuItem? _currentMenu;
+  _MenuTypeModel? _currentMenuModel;
   String _iconName = 'flutter';
   String? _title;
   String? _toolTip;
@@ -31,7 +31,7 @@ class TrayManagerLinux {
     if (_client != null) {
       await _client!.close();
       _client = null;
-      _currentMenu = null;
+      _currentMenuModel = null;
     }
   }
 
@@ -55,20 +55,21 @@ class TrayManagerLinux {
 
   Future<void> setContextMenu(Menu menu) async {
     DBusMenuItem rootMenu = _buildDBusMenu(menu);
+    _MenuTypeModel menuModel = _buildMenuTypeModel(menu);
     if (_client == null) {
-      await _ensureClient(initialMenu: rootMenu);
+      await _ensureClient(initialMenu: rootMenu, initialMenuModel: menuModel);
       return;
     }
 
-    if (_isMenuLayoutCompatible(_currentMenu, rootMenu)) {
+    if (_isMenuTypeCompatible(_currentMenuModel, menuModel)) {
       await _client!.updateMenu(rootMenu);
-      _currentMenu = rootMenu;
+      _currentMenuModel = menuModel;
       return;
     }
 
     // TODO(arran4): Replace full client recreation once the DBus menu layer
     // supports structural menu updates.
-    await _recreateClientWithMenu(rootMenu);
+    await _recreateClientWithMenu(rootMenu, menuModel);
   }
 
   DBusMenuItem _buildDBusMenu(Menu menu) {
@@ -112,7 +113,10 @@ class TrayManagerLinux {
     );
   }
 
-  Future<void> _ensureClient({DBusMenuItem? initialMenu}) async {
+  Future<void> _ensureClient({
+    DBusMenuItem? initialMenu,
+    _MenuTypeModel? initialMenuModel,
+  }) async {
     if (_client == null) {
       String id = 'tray_manager_${shortid.generate()}';
       _client = StatusNotifierItemClient(
@@ -133,7 +137,7 @@ class TrayManagerLinux {
            // Provide the menu structure
         },
       );
-      _currentMenu = initialMenu ?? DBusMenuItem(children: []);
+      _currentMenuModel = initialMenuModel ?? const _MenuTypeModel.root();
       _client!.iconName = _iconName; // Default fallback
       if (_title != null) {
         _client!.title = _title!;
@@ -145,13 +149,16 @@ class TrayManagerLinux {
     }
   }
 
-  Future<void> _recreateClientWithMenu(DBusMenuItem menu) async {
+  Future<void> _recreateClientWithMenu(
+    DBusMenuItem menu,
+    _MenuTypeModel menuModel,
+  ) async {
     if (_client != null) {
       await _client!.close();
       _client = null;
-      _currentMenu = null;
+      _currentMenuModel = null;
     }
-    await _ensureClient(initialMenu: menu);
+    await _ensureClient(initialMenu: menu, initialMenuModel: menuModel);
   }
 
   StatusNotifierToolTip _buildToolTip(String toolTip) {
@@ -163,23 +170,66 @@ class TrayManagerLinux {
     );
   }
 
-  bool _isMenuLayoutCompatible(DBusMenuItem? previous, DBusMenuItem next) {
+  _MenuTypeModel _buildMenuTypeModel(Menu menu) {
+    return _MenuTypeModel(
+      type: _MenuTypeModel.rootType,
+      children: (menu.items ?? []).map(_buildMenuItemTypeModel).toList(),
+    );
+  }
+
+  _MenuTypeModel _buildMenuItemTypeModel(MenuItem item) {
+    return _MenuTypeModel(
+      type: _normalizeMenuItemType(item.type),
+      children: (item.submenu?.items ?? []).map(_buildMenuItemTypeModel).toList(),
+    );
+  }
+
+  String _normalizeMenuItemType(String? type) {
+    switch (type) {
+      case 'separator':
+      case 'checkbox':
+      case 'radio':
+        return type!;
+      default:
+        return 'normal';
+    }
+  }
+
+  bool _isMenuTypeCompatible(_MenuTypeModel? previous, _MenuTypeModel next) {
     if (previous == null) {
       return false;
     }
 
-    List<DBusMenuItem> previousChildren = previous.children;
-    List<DBusMenuItem> nextChildren = next.children;
-    if (previousChildren.length != nextChildren.length) {
+    if (previous.type != next.type) {
       return false;
     }
 
-    for (int i = 0; i < previousChildren.length; i++) {
-      if (!_isMenuLayoutCompatible(previousChildren[i], nextChildren[i])) {
+    if (previous.children.length != next.children.length) {
+      return false;
+    }
+
+    for (int index = 0; index < previous.children.length; index++) {
+      if (!_isMenuTypeCompatible(previous.children[index], next.children[index])) {
         return false;
       }
     }
 
     return true;
   }
+}
+
+class _MenuTypeModel {
+  static const String rootType = 'root';
+
+  final String type;
+  final List<_MenuTypeModel> children;
+
+  const _MenuTypeModel({
+    required this.type,
+    required this.children,
+  });
+
+  const _MenuTypeModel.root()
+      : type = rootType,
+        children = const [];
 }
