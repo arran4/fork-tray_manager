@@ -75,10 +75,17 @@ class TrayManagerLinux {
   }
 
   Future<void> setIcon(String id, String iconPath) async {
+    final bool shouldRecreateForIdChange =
+        _indicator != null && _indicatorId != null && _indicatorId != id;
+
     _indicatorId = id;
     _iconPath = iconPath;
 
-    await _ensureClient(initialMenu: _currentMenuRoot);
+    if (shouldRecreateForIdChange) {
+      await _recreateClient(_currentMenuRoot);
+    } else {
+      await _ensureClient(initialMenu: _currentMenuRoot);
+    }
 
     if (_indicator != null) {
       _indicator!.iconName = iconPath;
@@ -119,7 +126,43 @@ class TrayManagerLinux {
     return true;
   }
 
-  Future<void> _recreateClient(DBusMenuItem rootMenu) async {
+  bool _hasSameMenuProperties(DBusMenuItem previous, DBusMenuItem next) {
+    if (previous.properties.length != next.properties.length) {
+      return false;
+    }
+
+    for (final key in previous.properties.keys) {
+      if (!next.properties.containsKey(key)) {
+        return false;
+      }
+
+      if (previous.properties[key].toString() != next.properties[key].toString()) {
+        return false;
+      }
+    }
+
+    return true;
+  }
+
+  bool _requiresClientRecreation(DBusMenuItem previous, DBusMenuItem next) {
+    if (!_hasCompatibleMenuStructure(previous, next)) {
+      return true;
+    }
+
+    if (!_hasSameMenuProperties(previous, next)) {
+      return true;
+    }
+
+    for (var i = 0; i < previous.children.length; i++) {
+      if (_requiresClientRecreation(previous.children[i], next.children[i])) {
+        return true;
+      }
+    }
+
+    return false;
+  }
+
+  Future<void> _recreateClient([DBusMenuItem? rootMenu]) async {
     if (_indicator != null) {
       _indicator!.status = AppIndicatorStatus.passive;
       await _indicator!.close();
@@ -127,7 +170,7 @@ class TrayManagerLinux {
     }
 
     _hasInstalledMenu = false;
-    await _ensureClient(initialMenu: rootMenu);
+    await _ensureClient(initialMenu: rootMenu ?? _currentMenuRoot);
   }
 
   Future<void> setContextMenu(Menu menu) async {
@@ -148,7 +191,7 @@ class TrayManagerLinux {
 
     final previousRootMenu = _currentMenuRoot;
     if (previousRootMenu != null &&
-        !_hasCompatibleMenuStructure(previousRootMenu, rootMenu)) {
+        _requiresClientRecreation(previousRootMenu, rootMenu)) {
       _currentMenuRoot = rootMenu;
       await _recreateClient(rootMenu);
       return;
