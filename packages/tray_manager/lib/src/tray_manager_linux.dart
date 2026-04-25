@@ -40,19 +40,31 @@ class TrayManagerLinux {
   Future<void> setIcon(String iconPath) async {
     await _ensureClient();
     _iconName = iconPath;
-    _client!.iconName = iconPath;
+    StatusNotifierItemClient? client = _client;
+    if (client == null) {
+      return;
+    }
+    client.iconName = iconPath;
   }
 
   Future<void> setToolTip(String toolTip) async {
     await _ensureClient();
     _toolTip = toolTip;
-    _client!.toolTip = _buildToolTip(toolTip);
+    StatusNotifierItemClient? client = _client;
+    if (client == null) {
+      return;
+    }
+    client.toolTip = _buildToolTip(toolTip);
   }
 
   Future<void> setTitle(String title) async {
     await _ensureClient();
     _title = title;
-    _client!.title = title;
+    StatusNotifierItemClient? client = _client;
+    if (client == null) {
+      return;
+    }
+    client.title = title;
   }
 
   Future<void> setContextMenu(Menu menu) async {
@@ -63,7 +75,11 @@ class TrayManagerLinux {
     }
 
     if (_isMenuLayoutCompatible(_currentMenu, rootMenu)) {
-      await _client!.updateMenu(rootMenu);
+      StatusNotifierItemClient? client = _client;
+      if (client == null) {
+        return;
+      }
+      await client.updateMenu(rootMenu);
       _currentMenu = rootMenu;
       return;
     }
@@ -117,7 +133,7 @@ class TrayManagerLinux {
   Future<void> _ensureClient({DBusMenuItem? initialMenu}) async {
     if (_client == null) {
       String id = 'tray_manager_${shortid.generate()}';
-      _client = StatusNotifierItemClient(
+      StatusNotifierItemClient client = StatusNotifierItemClient(
         id: id,
         menu: initialMenu ?? DBusMenuItem(children: []),
         onActivate: (x, y) async {
@@ -135,15 +151,16 @@ class TrayManagerLinux {
            // Provide the menu structure
         },
       );
+      _client = client;
       _currentMenu = initialMenu ?? DBusMenuItem(children: []);
-      _client!.iconName = _iconName; // Default fallback
+      client.iconName = _iconName; // Default fallback
       if (_title != null) {
-        _client!.title = _title!;
+        client.title = _title!;
       }
       if (_toolTip != null) {
-        _client!.toolTip = _buildToolTip(_toolTip!);
+        client.toolTip = _buildToolTip(_toolTip!);
       }
-      await _client!.connect();
+      await client.connect();
     }
   }
 
