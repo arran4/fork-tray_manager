@@ -14,7 +14,6 @@ class TrayManagerLinux {
   }
 
   StatusNotifierItemClient? _client;
-  DBusMenuItem? _currentMenu;
   _MenuTypeModel? _currentMenuModel;
   String _iconName = 'flutter';
   String? _title;
@@ -32,7 +31,6 @@ class TrayManagerLinux {
     if (_client != null) {
       await _client!.close();
       _client = null;
-      _currentMenu = null;
       _currentMenuModel = null;
     }
   }
@@ -63,10 +61,8 @@ class TrayManagerLinux {
       return;
     }
 
-    if (_isMenuLayoutCompatible(_currentMenu, rootMenu) &&
-        _isMenuTypeCompatible(_currentMenuModel, menuModel)) {
+    if (_isMenuTypeCompatible(_currentMenuModel, menuModel)) {
       await _client!.updateMenu(rootMenu);
-      _currentMenu = rootMenu;
       _currentMenuModel = menuModel;
       return;
     }
@@ -141,7 +137,6 @@ class TrayManagerLinux {
            // Provide the menu structure
         },
       );
-      _currentMenu = initialMenu ?? DBusMenuItem(children: []);
       _currentMenuModel = initialMenuModel ?? const _MenuTypeModel.root();
       _client!.iconName = _iconName; // Default fallback
       if (_title != null) {
@@ -161,7 +156,6 @@ class TrayManagerLinux {
     if (_client != null) {
       await _client!.close();
       _client = null;
-      _currentMenu = null;
       _currentMenuModel = null;
     }
     await _ensureClient(initialMenu: menu, initialMenuModel: menuModel);
@@ -174,26 +168,6 @@ class TrayManagerLinux {
       title: toolTip,
       body: '',
     );
-  }
-
-  bool _isMenuLayoutCompatible(DBusMenuItem? previous, DBusMenuItem next) {
-    if (previous == null) {
-      return false;
-    }
-
-    List<DBusMenuItem> previousChildren = previous.children;
-    List<DBusMenuItem> nextChildren = next.children;
-    if (previousChildren.length != nextChildren.length) {
-      return false;
-    }
-
-    for (int i = 0; i < previousChildren.length; i++) {
-      if (!_isMenuLayoutCompatible(previousChildren[i], nextChildren[i])) {
-        return false;
-      }
-    }
-
-    return true;
   }
 
   _MenuTypeModel _buildMenuTypeModel(Menu menu) {
