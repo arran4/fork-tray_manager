@@ -26,51 +26,63 @@ class TrayManagerLinux {
   void Function()? onTrayIconRightMouseUp;
   void Function(int id)? onTrayMenuItemClick;
   void Function(int delta, String orientation)? onTrayIconScroll;
+  Future<void> _clientOperation = Future.value();
 
   Future<void> destroy() async {
-    StatusNotifierItemClient? client = _client;
-    _client = null;
-    _currentMenu = null;
+    await _runClientOperation(() async {
+      StatusNotifierItemClient? client = _client;
+      _client = null;
+      _currentMenu = null;
 
-    if (client != null) {
-      await client.close();
-    }
+      if (client != null) {
+        await client.close();
+      }
+    });
   }
 
   Future<void> setIcon(String iconPath) async {
-    await _ensureClient();
-    _iconName = iconPath;
-    _client!.iconName = iconPath;
+    await _runClientOperation(() async {
+      StatusNotifierItemClient client = await _ensureClient();
+      _iconName = iconPath;
+      client.iconName = iconPath;
+    });
   }
 
   Future<void> setToolTip(String toolTip) async {
-    await _ensureClient();
-    _toolTip = toolTip;
-    _client!.toolTip = _buildToolTip(toolTip);
+    await _runClientOperation(() async {
+      StatusNotifierItemClient client = await _ensureClient();
+      _toolTip = toolTip;
+      client.toolTip = _buildToolTip(toolTip);
+    });
   }
 
   Future<void> setTitle(String title) async {
-    await _ensureClient();
-    _title = title;
-    _client!.title = title;
+    await _runClientOperation(() async {
+      StatusNotifierItemClient client = await _ensureClient();
+      _title = title;
+      client.title = title;
+    });
   }
 
   Future<void> setContextMenu(Menu menu) async {
-    DBusMenuItem rootMenu = _buildDBusMenu(menu);
-    if (_client == null) {
-      await _ensureClient(initialMenu: rootMenu);
-      return;
-    }
+    await _runClientOperation(() async {
+      DBusMenuItem rootMenu = _buildDBusMenu(menu);
+      if (_client == null) {
+        await _ensureClient(initialMenu: rootMenu);
+        return;
+      }
 
-    if (_isMenuLayoutCompatible(_currentMenu, rootMenu)) {
-      await _client!.updateMenu(rootMenu);
-      _currentMenu = rootMenu;
-      return;
-    }
+      if (_isMenuLayoutCompatible(_currentMenu, rootMenu)) {
+        StatusNotifierItemClient client = _client!;
+        await client.updateMenu(rootMenu);
+        _currentMenu = rootMenu;
+        return;
+      }
 
-    // TODO(arran4): Replace full client recreation once the DBus menu layer
-    // supports structural menu updates.
-    await _recreateClientWithMenu(rootMenu);
+      // TODO(arran4): Replace full client recreation once the DBus menu layer
+      // supports structural menu updates.
+      await _recreateClientWithMenu(rootMenu);
+    });
   }
 
   DBusMenuItem _buildDBusMenu(Menu menu) {
@@ -114,12 +126,16 @@ class TrayManagerLinux {
     );
   }
 
-  Future<void> _ensureClient({DBusMenuItem? initialMenu}) async {
-    if (_client == null) {
-      String id = 'tray_manager_${shortid.generate()}';
-      _client = StatusNotifierItemClient(
+  Future<StatusNotifierItemClient> _ensureClient({DBusMenuItem? initialMenu}) async {
+    if (_client != null) {
+      return _client!;
+    }
+
+    String id = 'tray_manager_${shortid.generate()}';
+    DBusMenuItem menu = initialMenu ?? DBusMenuItem(children: []);
+    StatusNotifierItemClient client = StatusNotifierItemClient(
         id: id,
-        menu: initialMenu ?? DBusMenuItem(children: []),
+        menu: menu,
         onActivate: (x, y) async {
            onTrayIconMouseDown?.call();
            onTrayIconMouseUp?.call();
@@ -135,16 +151,28 @@ class TrayManagerLinux {
            // Provide the menu structure
         },
       );
-      _currentMenu = initialMenu ?? DBusMenuItem(children: []);
-      _client!.iconName = _iconName; // Default fallback
-      if (_title != null) {
-        _client!.title = _title!;
-      }
-      if (_toolTip != null) {
-        _client!.toolTip = _buildToolTip(_toolTip!);
-      }
-      await _client!.connect();
+
+    _client = client;
+    _currentMenu = menu;
+    client.iconName = _iconName; // Default fallback
+    if (_title != null) {
+      client.title = _title!;
     }
+    if (_toolTip != null) {
+      client.toolTip = _buildToolTip(_toolTip!);
+    }
+
+    try {
+      await client.connect();
+    } catch (_) {
+      if (identical(_client, client)) {
+        _client = null;
+        _currentMenu = null;
+      }
+      rethrow;
+    }
+
+    return client;
   }
 
   Future<void> _recreateClientWithMenu(DBusMenuItem menu) async {
@@ -157,6 +185,19 @@ class TrayManagerLinux {
     }
 
     await _ensureClient(initialMenu: menu);
+  }
+
+  Future<T> _runClientOperation<T>(Future<T> Function() operation) {
+    Completer<T> completer = Completer<T>();
+    _clientOperation = _clientOperation.catchError((_) {}).then((_) async {
+      try {
+        T result = await operation();
+        completer.complete(result);
+      } catch (error, stackTrace) {
+        completer.completeError(error, stackTrace);
+      }
+    });
+    return completer.future;
   }
 
   StatusNotifierToolTip _buildToolTip(String toolTip) {
