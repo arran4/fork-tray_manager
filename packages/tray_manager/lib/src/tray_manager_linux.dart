@@ -38,21 +38,21 @@ class TrayManagerLinux {
   }
 
   Future<void> setIcon(String iconPath) async {
-    await _ensureClient();
+    StatusNotifierItemClient client = await _ensureClient();
     _iconName = iconPath;
-    _client!.iconName = iconPath;
+    client.iconName = iconPath;
   }
 
   Future<void> setToolTip(String toolTip) async {
-    await _ensureClient();
+    StatusNotifierItemClient client = await _ensureClient();
     _toolTip = toolTip;
-    _client!.toolTip = _buildToolTip(toolTip);
+    client.toolTip = _buildToolTip(toolTip);
   }
 
   Future<void> setTitle(String title) async {
-    await _ensureClient();
+    StatusNotifierItemClient client = await _ensureClient();
     _title = title;
-    _client!.title = title;
+    client.title = title;
   }
 
   Future<void> setContextMenu(Menu menu) async {
@@ -63,7 +63,12 @@ class TrayManagerLinux {
     }
 
     if (_isMenuLayoutCompatible(_currentMenu, rootMenu)) {
-      await _client!.updateMenu(rootMenu);
+      StatusNotifierItemClient? client = _client;
+      if (client == null) {
+        return;
+      }
+
+      await client.updateMenu(rootMenu);
       _currentMenu = rootMenu;
       return;
     }
@@ -114,7 +119,7 @@ class TrayManagerLinux {
     );
   }
 
-  Future<void> _ensureClient({DBusMenuItem? initialMenu}) async {
+  Future<StatusNotifierItemClient> _ensureClient({DBusMenuItem? initialMenu}) async {
     if (_client == null) {
       String id = 'tray_manager_${shortid.generate()}';
       _client = StatusNotifierItemClient(
@@ -145,15 +150,20 @@ class TrayManagerLinux {
       }
       await _client!.connect();
     }
+
+    return _client!;
   }
 
   Future<void> _recreateClientWithMenu(DBusMenuItem menu) async {
     StatusNotifierItemClient? client = _client;
-    _client = null;
-    _currentMenu = null;
 
     if (client != null) {
       await client.close();
+    }
+
+    if (identical(_client, client)) {
+      _client = null;
+      _currentMenu = null;
     }
 
     await _ensureClient(initialMenu: menu);
