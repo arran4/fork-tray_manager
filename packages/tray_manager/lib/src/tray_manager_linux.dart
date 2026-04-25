@@ -15,6 +15,7 @@ class TrayManagerLinux {
 
   StatusNotifierItemClient? _client;
   _MenuTypeModel? _currentMenuModel;
+  Future<void> _pendingClientOperation = Future<void>.value();
   String _iconName = 'flutter';
   String? _title;
   String? _toolTip;
@@ -28,48 +29,83 @@ class TrayManagerLinux {
   void Function(int delta, String orientation)? onTrayIconScroll;
 
   Future<void> destroy() async {
-    if (_client != null) {
-      await _client!.close();
-      _client = null;
-      _currentMenuModel = null;
-    }
+    await _runSerializedClientOperation(() async {
+      if (_client != null) {
+        final StatusNotifierItemClient clientToClose = _client!;
+        _client = null;
+        _currentMenuModel = null;
+        await clientToClose.close();
+      }
+    });
   }
 
   Future<void> setIcon(String iconPath) async {
-    await _ensureClient();
-    _iconName = iconPath;
-    _client!.iconName = iconPath;
+    await _runSerializedClientOperation(() async {
+      await _ensureClient();
+      _iconName = iconPath;
+      _client!.iconName = iconPath;
+    });
   }
 
   Future<void> setToolTip(String toolTip) async {
-    await _ensureClient();
-    _toolTip = toolTip;
-    _client!.toolTip = _buildToolTip(toolTip);
+    await _runSerializedClientOperation(() async {
+      await _ensureClient();
+      _toolTip = toolTip;
+      _client!.toolTip = _buildToolTip(toolTip);
+    });
   }
 
   Future<void> setTitle(String title) async {
-    await _ensureClient();
-    _title = title;
-    _client!.title = title;
+    await _runSerializedClientOperation(() async {
+      await _ensureClient();
+      _title = title;
+      _client!.title = title;
+    });
   }
 
   Future<void> setContextMenu(Menu menu) async {
-    DBusMenuItem rootMenu = _buildDBusMenu(menu);
-    _MenuTypeModel menuModel = _buildMenuTypeModel(menu);
-    if (_client == null) {
-      await _ensureClient(initialMenu: rootMenu, initialMenuModel: menuModel);
-      return;
-    }
+    await _runSerializedClientOperation(() async {
+      DBusMenuItem rootMenu = _buildDBusMenu(menu);
+      _MenuTypeModel menuModel = _buildMenuTypeModel(menu);
+      if (_client == null) {
+        await _ensureClient(initialMenu: rootMenu, initialMenuModel: menuModel);
+        return;
+      }
 
-    if (_isMenuTypeCompatible(_currentMenuModel, menuModel)) {
-      await _client!.updateMenu(rootMenu);
-      _currentMenuModel = menuModel;
-      return;
-    }
+      if (_isMenuTypeCompatible(_currentMenuModel, menuModel)) {
+        await _client!.updateMenu(rootMenu);
+        _currentMenuModel = menuModel;
+        return;
+      }
 
-    // TODO(arran4): Replace full client recreation once the DBus menu layer
-    // supports structural menu updates.
-    await _recreateClientWithMenu(rootMenu, menuModel);
+      // TODO(arran4): Replace full client recreation once the DBus menu layer
+      // supports structural menu updates.
+      await _recreateClientWithMenu(rootMenu, menuModel);
+    });
+  }
+
+  Future<T> _runSerializedClientOperation<T>(
+    Future<T> Function() operation,
+  ) {
+    final Completer<T> completer = Completer<T>();
+    final Future<void> previousOperation = _pendingClientOperation;
+
+    _pendingClientOperation = Future<void>.sync(() async {
+      try {
+        await previousOperation;
+      } catch (_) {
+        // Keep the queue moving even when a previous operation fails.
+      }
+
+      try {
+        final T result = await operation();
+        completer.complete(result);
+      } catch (error, stackTrace) {
+        completer.completeError(error, stackTrace);
+      }
+    });
+
+    return completer.future;
   }
 
   DBusMenuItem _buildDBusMenu(Menu menu) {
@@ -154,9 +190,10 @@ class TrayManagerLinux {
     _MenuTypeModel menuModel,
   ) async {
     if (_client != null) {
-      await _client!.close();
+      final StatusNotifierItemClient clientToClose = _client!;
       _client = null;
       _currentMenuModel = null;
+      await clientToClose.close();
     }
     await _ensureClient(initialMenu: menu, initialMenuModel: menuModel);
   }
