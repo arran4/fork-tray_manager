@@ -94,19 +94,7 @@ dependencies:
 
 #### Linux requirements
 
-- `ayatana-appindicator3-0.1` or `appindicator3-0.1`
-
-Run the following command
-
-```
-sudo apt-get install libayatana-appindicator3-dev
-```
-
-Or
-
-```
-sudo apt-get install appindicator3-0.1 libappindicator3-dev
-```
+This package is implemented with `dart_xdg_status_notifier_item` using standard D-Bus, so no extra C dependencies (e.g., libappindicator) are required on Linux.
 
 ### Usage
 
@@ -212,7 +200,7 @@ class _HomePageState extends State<HomePage> with TrayListener {
 | destroy          | Destroys the tray icon immediately.            | ✔️    | ✔️    | ✔️      |
 | setIcon          | Sets the image associated with this tray icon. | ✔️    | ✔️    | ✔️      |
 | setIconPosition  | Sets the icon position of the tray icon.       | ➖    | ✔️    | ➖      |
-| setToolTip       | Sets the hover text for this tray icon.        | ➖    | ✔️    | ✔️      |
+| setToolTip       | Sets the hover text for this tray icon.        | ✔️    | ✔️    | ✔️      |
 | setContextMenu   | Sets the context menu for this icon.           | ✔️    | ✔️    | ✔️      |
 | popUpContextMenu | Pops up the context menu of the tray icon.     | ➖    | ✔️    | ✔️      |
 | getBounds        | Returns `Rect` The bounds of this tray icon.   | ➖    | ✔️    | ✔️      |
